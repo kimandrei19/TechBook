@@ -1,132 +1,166 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const body = document.body;
-    const themeToggle = document.getElementById('theme-toggle');
-    const searchBar = document.getElementById('search-bar');
-    const filterBtns = document.querySelectorAll('.filter-btn');
-    const sortSelect = document.getElementById('sort-select');
-    const bookGrid = document.getElementById('book-grid');
-    const noResultsMessage = document.getElementById('no-results');
-    const backToTopBtn = document.getElementById('back-to-top');
-    const modalOverlay = document.getElementById('modal-overlay');
-
-    let filters = { genre: 'all', searchTerm: '' };
-    let currentSort = 'title-asc';
-
-    const applyTheme = (theme) => {
-        body.classList.toggle('dark-mode', theme === 'dark');
+    // --- ELEMENTS ---
+    const elements = {
+        preloader: document.getElementById('preloader'),
+        navbar: document.getElementById('navbar'),
+        themeToggle: document.getElementById('theme-toggle'),
+        searchBar: document.getElementById('search-bar'),
+        bookGrid: document.getElementById('book-grid'),
+        liveStats: document.getElementById('live-stats'),
+        loadMoreBtn: document.getElementById('load-more-btn'),
+        modalOverlay: document.getElementById('modal-overlay'),
+        backToTopBtn: document.getElementById('back-to-top'),
     };
 
-    const renderBooks = () => {
-        let filteredBooks = booksData.filter(book => {
-            const matchesGenre = filters.genre === 'all' || book.genre === filters.genre;
-            const matchesSearch = book.title.toLowerCase().includes(filters.searchTerm) || book.author.toLowerCase().includes(filters.searchTerm);
-            return matchesGenre && matchesSearch;
-        });
+    // --- STATE ---
+    const state = {
+        allBooks: [],
+        filteredBooks: [],
+        booksPerPage: 9,
+        currentPage: 1,
+        searchTerm: '',
+    };
 
-        filteredBooks.sort((a, b) => {
-            switch (currentSort) {
-                case 'title-asc': return a.title.localeCompare(b.title);
-                case 'title-desc': return b.title.localeCompare(a.title);
-                case 'year-desc': return b.publish_year - a.publish_year;
-                case 'year-asc': return a.publish_year - b.publish_year;
-                default: return 0;
-            }
-        });
-
-        bookGrid.innerHTML = '';
-        if (filteredBooks.length === 0) {
-            noResultsMessage.style.display = 'block';
-        } else {
-            noResultsMessage.style.display = 'none';
-            filteredBooks.forEach((book, index) => {
-                const card = document.createElement('div');
-                card.className = 'book-card';
-                card.style.animationDelay = `${index * 50}ms`;
-                card.dataset.bookId = book.id;
-                card.innerHTML = `
-                    <img src="images/${book.cover_image}" alt="Cover of ${book.title}" class="card-image" loading="lazy">
-                    <div class="card-content">
-                        <h3>${book.title}</h3>
-                        <p>${book.author}</p>
-                    </div>
-                `;
-                bookGrid.appendChild(card);
-            });
+    // --- API ---
+    const fetchData = async () => {
+        try {
+            // Re-order by title by default from the API
+            const response = await fetch('api.php?sort=title_asc');
+            if (!response.ok) throw new Error('Network response was not ok');
+            state.allBooks = await response.json();
+            state.filteredBooks = state.allBooks;
+            init();
+        } catch (error) {
+            console.error('Failed to fetch books:', error);
+            elements.bookGrid.innerHTML = `<p class="error-message">Could not load books. Please try again later.</p>`;
+        } finally {
+            elements.preloader.classList.add('hidden');
         }
     };
 
-    const openModal = (book) => {
-        document.getElementById('modal-cover').src = `images/${book.cover_image}`;
-        document.getElementById('modal-title').textContent = book.title;
-        document.getElementById('modal-author').innerHTML = `<strong>Author:</strong> ${book.author}`;
-        document.getElementById('modal-year').innerHTML = `<strong>Published:</strong> ${book.publish_year}`;
-        document.getElementById('modal-genre').innerHTML = `<strong>Genre:</strong> ${book.genre}`;
-        document.getElementById('modal-description').textContent = book.description;
-        modalOverlay.classList.add('show');
+    // --- RENDER FUNCTIONS ---
+    const renderBooks = () => {
+        const startIndex = 0;
+        const endIndex = state.currentPage * state.booksPerPage;
+        const booksToRender = state.filteredBooks.slice(startIndex, endIndex);
+
+        elements.bookGrid.innerHTML = ''; // Clear grid before rendering
+        booksToRender.forEach(book => {
+            const card = createBookCard(book);
+            elements.bookGrid.appendChild(card);
+        });
+
+        observeCards();
+        updateUI();
     };
 
-    const closeModal = () => {
-        modalOverlay.classList.remove('show');
+    const createBookCard = (book) => {
+        const card = document.createElement('div');
+        card.className = 'book-card';
+        card.dataset.bookId = book.id;
+        card.innerHTML = `
+            <img src="images/${book.cover_image}" alt="Cover of ${book.title}" class="card-image" loading="lazy">
+            <div class="card-content">
+                <h3>${book.title}</h3>
+                <p>${book.author}</p>
+            </div>
+        `;
+        return card;
+    };
+
+    const renderModal = (book) => {
+        elements.modalOverlay.innerHTML = `
+            <div class="modal-content">
+                <span class="modal-close" id="modal-close">×</span>
+                <img src="images/${book.cover_image}" alt="Book Cover" class="modal-cover">
+                <div class="modal-info">
+                    <h2>${book.title}</h2>
+                    <p><strong>Author:</strong> ${book.author}</p>
+                    <p><strong>Published:</strong> ${book.publish_year}</p>
+                    <p><strong>Genre:</strong> ${book.genre}</p>
+                    <p class="modal-description">${book.description}</p>
+                </div>
+            </div>
+        `;
+        elements.modalOverlay.classList.add('show');
+    };
+
+    // --- UI & LOGIC ---
+    const updateUI = () => {
+        const booksShown = Math.min(state.currentPage * state.booksPerPage, state.filteredBooks.length);
+        elements.liveStats.textContent = `Showing ${booksShown} of ${state.filteredBooks.length} books`;
+        elements.loadMoreBtn.classList.toggle('hidden', booksShown >= state.filteredBooks.length);
+    };
+
+    const applyFilterAndSearch = () => {
+        state.filteredBooks = state.allBooks.filter(book =>
+            book.title.toLowerCase().includes(state.searchTerm) || book.author.toLowerCase().includes(state.searchTerm)
+        );
+        state.currentPage = 1; // Reset to first page
+        renderBooks();
+    };
+
+    const observeCards = () => {
+        const cards = document.querySelectorAll('.book-card');
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.1 });
+        cards.forEach(card => observer.observe(card));
     };
 
     // --- EVENT LISTENERS ---
-    themeToggle.addEventListener('click', () => {
-        const isDarkMode = body.classList.toggle('dark-mode');
-        localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
-    });
+    const setupEventListeners = () => {
+        elements.themeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+        });
 
-    searchBar.addEventListener('input', (e) => {
-        filters.searchTerm = e.target.value.toLowerCase();
-        renderBooks();
-    });
+        elements.searchBar.addEventListener('input', (e) => {
+            state.searchTerm = e.target.value.toLowerCase();
+            applyFilterAndSearch();
+        });
 
-    sortSelect.addEventListener('change', (e) => {
-        currentSort = e.target.value;
-        renderBooks();
-    });
-
-    filterBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            filterBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            filters.genre = btn.dataset.genre;
+        elements.loadMoreBtn.addEventListener('click', () => {
+            state.currentPage++;
             renderBooks();
         });
-    });
 
-    bookGrid.addEventListener('click', (e) => {
-        const card = e.target.closest('.book-card');
-        if (card) {
-            const bookId = card.dataset.bookId;
-            const book = booksData.find(b => b.id == bookId);
-            if (book) openModal(book);
-        }
-    });
+        elements.bookGrid.addEventListener('click', (e) => {
+            const card = e.target.closest('.book-card');
+            if (!card) return;
+            const book = state.allBooks.find(b => b.id == card.dataset.bookId);
+            if (book) renderModal(book);
+        });
 
-    modalOverlay.addEventListener('click', (e) => {
-        if (e.target === modalOverlay || e.target.classList.contains('modal-close')) {
-            closeModal();
-        }
-    });
+        elements.modalOverlay.addEventListener('click', (e) => {
+            if (e.target.id === 'modal-overlay' || e.target.id === 'modal-close') {
+                elements.modalOverlay.classList.remove('show');
+            }
+        });
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modalOverlay.classList.contains('show')) {
-            closeModal();
-        }
-    });
+        window.addEventListener('scroll', () => {
+            elements.navbar.classList.toggle('scrolled', window.scrollY > 50);
+            elements.backToTopBtn.classList.toggle('show', window.scrollY > 300);
+        });
 
-    window.addEventListener('scroll', () => {
-        backToTopBtn.classList.toggle('show', window.scrollY > 300);
-    });
+        elements.backToTopBtn.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    };
 
-    backToTopBtn.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
+    // --- INITIALIZATION ---
+    const init = () => {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) document.body.classList.toggle('dark-mode', savedTheme === 'dark');
 
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-        applyTheme(savedTheme);
-    }
+        renderBooks();
+        setupEventListeners();
+    };
 
-    renderBooks();
+    fetchData();
 });
