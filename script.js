@@ -1,5 +1,4 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- ELEMENTS ---
     const elements = {
         preloader: document.getElementById('preloader'),
         navbar: document.getElementById('navbar'),
@@ -10,22 +9,31 @@ document.addEventListener('DOMContentLoaded', () => {
         loadMoreBtn: document.getElementById('load-more-btn'),
         modalOverlay: document.getElementById('modal-overlay'),
         backToTopBtn: document.getElementById('back-to-top'),
+        quoteDisplay: document.getElementById('quote-display'),
+        quoteText: document.getElementById('quote-text'),
+        quoteAuthor: document.getElementById('quote-author'),
     };
 
-    // --- STATE ---
+    const quotes = [
+        { text: "So we beat on, boats against the current, borne back ceaselessly into the past.", author: "F. Scott Fitzgerald, The Great Gatsby" },
+        { text: "It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.", author: "Jane Austen, Pride and Prejudice" },
+        { text: "I am no bird; and no net ensnares me: I am a free human being with an independent will.", author: "Charlotte Brontë, Jane Eyre" },
+        { text: "All that is gold does not glitter, Not all those who wander are lost.", author: "J.R.R. Tolkien, The Fellowship of the Ring" },
+        { text: "The mystery of life isn't a problem to solve, but a reality to experience.", author: "Frank Herbert, Dune" }
+    ];
+
     const state = {
         allBooks: [],
         filteredBooks: [],
-        booksPerPage: 9,
+        booksPerPage: 8,
         currentPage: 1,
         searchTerm: '',
+        currentQuoteIndex: 0,
     };
 
-    // --- API ---
     const fetchData = async () => {
         try {
-            // Re-order by title by default from the API
-            const response = await fetch('api.php?sort=title_asc');
+            const response = await fetch('api.php');
             if (!response.ok) throw new Error('Network response was not ok');
             state.allBooks = await response.json();
             state.filteredBooks = state.allBooks;
@@ -38,13 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- RENDER FUNCTIONS ---
     const renderBooks = () => {
         const startIndex = 0;
         const endIndex = state.currentPage * state.booksPerPage;
         const booksToRender = state.filteredBooks.slice(startIndex, endIndex);
 
-        elements.bookGrid.innerHTML = ''; // Clear grid before rendering
+        elements.bookGrid.innerHTML = '';
         booksToRender.forEach(book => {
             const card = createBookCard(book);
             elements.bookGrid.appendChild(card);
@@ -85,10 +92,13 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.modalOverlay.classList.add('show');
     };
 
-    // --- UI & LOGIC ---
+    const closeModal = () => {
+        elements.modalOverlay.classList.remove('show');
+    };
+
     const updateUI = () => {
         const booksShown = Math.min(state.currentPage * state.booksPerPage, state.filteredBooks.length);
-        elements.liveStats.textContent = `Showing ${booksShown} of ${state.filteredBooks.length} books`;
+        elements.liveStats.textContent = `Showing ${booksShown} of ${state.filteredBooks.length} tomes`;
         elements.loadMoreBtn.classList.toggle('hidden', booksShown >= state.filteredBooks.length);
     };
 
@@ -96,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.filteredBooks = state.allBooks.filter(book =>
             book.title.toLowerCase().includes(state.searchTerm) || book.author.toLowerCase().includes(state.searchTerm)
         );
-        state.currentPage = 1; // Reset to first page
+        state.currentPage = 1;
         renderBooks();
     };
 
@@ -113,11 +123,27 @@ document.addEventListener('DOMContentLoaded', () => {
         cards.forEach(card => observer.observe(card));
     };
 
-    // --- EVENT LISTENERS ---
+    const initQuoteCarousel = () => {
+        if (!elements.quoteDisplay) return;
+        showNextQuote();
+        setInterval(showNextQuote, 8000);
+    };
+
+    const showNextQuote = () => {
+        elements.quoteDisplay.classList.add('fade-out');
+        setTimeout(() => {
+            state.currentQuoteIndex = (state.currentQuoteIndex + 1) % quotes.length;
+            const quote = quotes[state.currentQuoteIndex];
+            elements.quoteText.textContent = `“${quote.text}”`;
+            elements.quoteAuthor.textContent = `— ${quote.author}`;
+            elements.quoteDisplay.classList.remove('fade-out');
+        }, 700);
+    };
+
     const setupEventListeners = () => {
         elements.themeToggle.addEventListener('click', () => {
-            document.body.classList.toggle('dark-mode');
-            localStorage.setItem('theme', document.body.classList.contains('dark-mode') ? 'dark' : 'light');
+            document.body.classList.toggle('light-mode');
+            localStorage.setItem('theme', document.body.classList.contains('light-mode') ? 'light' : 'dark');
         });
 
         elements.searchBar.addEventListener('input', (e) => {
@@ -134,12 +160,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = e.target.closest('.book-card');
             if (!card) return;
             const book = state.allBooks.find(b => b.id == card.dataset.bookId);
-            if (book) renderModal(book);
+            if (book) {
+                renderModal(book);
+            }
         });
 
         elements.modalOverlay.addEventListener('click', (e) => {
-            if (e.target.id === 'modal-overlay' || e.target.id === 'modal-close') {
-                elements.modalOverlay.classList.remove('show');
+            if (e.target.id === 'modal-overlay' || e.target.classList.contains('modal-close')) {
+                closeModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && elements.modalOverlay.classList.contains('show')) {
+                closeModal();
             }
         });
 
@@ -153,11 +187,13 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     };
 
-    // --- INITIALIZATION ---
     const init = () => {
         const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) document.body.classList.toggle('dark-mode', savedTheme === 'dark');
+        if (savedTheme) {
+            document.body.classList.toggle('light-mode', savedTheme === 'light');
+        }
 
+        initQuoteCarousel();
         renderBooks();
         setupEventListeners();
     };
